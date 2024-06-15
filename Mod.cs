@@ -1,21 +1,25 @@
-﻿using KitchenLib;
+﻿using Kitchen;
+using KitchenLib;
 using KitchenLib.Event;
 using KitchenMods;
 using System.Reflection;
+using Unity.Entities;
+using Unity.Collections;
 using UnityEngine;
+using HarmonyLib;
 
 // Namespace should have "Kitchen" in the beginning
-namespace KitchenMyMod
+namespace KitchenRespectMyTime
 {
     public class Mod : BaseMod, IModSystem
     {
         // GUID must be unique and is recommended to be in reverse domain name notation
         // Mod Name is displayed to the player and listed in the mods menu
         // Mod Version must follow semver notation e.g. "1.2.3"
-        public const string MOD_GUID = "com.example.mymod";
-        public const string MOD_NAME = "My Mod";
-        public const string MOD_VERSION = "0.1.0";
-        public const string MOD_AUTHOR = "My Name";
+        public const string MOD_GUID = "de.glpste.respect-my-time";
+        public const string MOD_NAME = "Respect My Time";
+        public const string MOD_VERSION = "0.0.1";
+        public const string MOD_AUTHOR = "geilepaste";
         public const string MOD_GAMEVERSION = ">=1.1.4";
         // Game version this mod is designed for in semver
         // e.g. ">=1.1.3" current and all future
@@ -28,6 +32,12 @@ namespace KitchenMyMod
         public const bool DEBUG_MODE = false;
 #endif
 
+        public const float XP_MODIFIER_MIN = .1f;
+        public float XP_MODIFIER = 5f;
+        public bool USE_PATCHER = false;
+
+        private EntityQuery GrantsQuery;
+
         public static AssetBundle Bundle;
 
         public Mod() : base(MOD_GUID, MOD_NAME, MOD_AUTHOR, MOD_VERSION, MOD_GAMEVERSION, Assembly.GetExecutingAssembly()) { }
@@ -35,19 +45,55 @@ namespace KitchenMyMod
         protected override void OnInitialise()
         {
             LogWarning($"{MOD_GUID} v{MOD_VERSION} in use!");
+            LogInfo($"Multiplying all XP gains by {XP_MODIFIER}!!!");
+            GrantsQuery = GetEntityQuery(typeof(CExpGrant));
         }
 
         private void AddGameData()
         {
             LogInfo("Attempting to register game data...");
 
-            // AddGameDataObject<MyCustomGDO>();
-
             LogInfo("Done loading game data.");
         }
 
         protected override void OnUpdate()
         {
+            if (!USE_PATCHER)
+            {
+                MultiplyExperienceGrants();
+            }
+        }
+
+        protected void MultiplyExperienceGrants()
+        {
+            if (GrantsQuery.IsEmpty) return;
+
+            // get all 
+            CExpGrant[] grants = GrantsQuery.ToEntityArray(Allocator.TempJob);
+            foreach (CExpGrant grant in grants)
+            {
+                if (!grant.isGranted)
+                {
+                    grant.Amount = grant.Amount * XP_MODIFIER;
+                    LogInfo($"Modified XP of grant with ID {grant.ExpIdentifier}");
+                }
+            }
+        }
+
+        [HarmonyLib.HarmonyPatch(typeof(ProgressionHelpers))]
+        public static class ExperiencePatcher
+        {
+
+            [HarmonyLib.HarmonyPatch(typeof(ProgressionHelpers.AdvanceByExp))]
+            [HarmonyLib.HarmonyPrefix]
+            public static void AdvanceByExp(this ref SPlayerLevel current, ref int exp)
+            {
+                if (Mod.USE_PATCHER)
+                {
+                    exp = exp * Mod.XP_MODIFIER;
+                }
+      
+            }
         }
 
         protected override void OnPostActivate(KitchenMods.Mod mod)
